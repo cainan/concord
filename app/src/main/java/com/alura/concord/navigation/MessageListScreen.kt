@@ -1,8 +1,14 @@
 package com.alura.concord.navigation
 
+import android.provider.OpenableColumns
+import android.util.Log
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.ui.platform.LocalContext
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavGraphBuilder
 import androidx.navigation.NavHostController
@@ -25,6 +31,7 @@ fun NavGraphBuilder.messageListScreen(
         backStackEntry.arguments?.getString(messageChatIdArgument)?.let { chatId ->
             val viewModelMessage = hiltViewModel<MessageListViewModel>()
             val uiState by viewModelMessage.uiState.collectAsState()
+            val context = LocalContext.current
 
             MessageScreen(
                 state = uiState,
@@ -47,6 +54,11 @@ fun NavGraphBuilder.messageListScreen(
 
             if (uiState.showBottomSheetSticker) {
                 val stickerList = mutableStateListOf<String>()
+
+                context.getExternalFilesDir("stickers")?.listFiles()?.forEach { file ->
+                    stickerList.add(file.path)
+                }
+
                 ModalBottomSheetSticker(
                     stickerList = stickerList,
                     onSelectedSticker = {
@@ -58,12 +70,56 @@ fun NavGraphBuilder.messageListScreen(
                     })
             }
 
+            val pickMedia =
+                rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
+
+                    if (uri != null) {
+                        viewModelMessage.loadMediaInScreen(uri.toString())
+                        Log.d("PhotoPicker", "Selected URI: $uri")
+                    } else {
+                        Log.d("PhotoPicker", "No media selected")
+                    }
+                }
+
+            val pickFile =
+                rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+
+                    if (uri != null) {
+
+                        val name = context.contentResolver.query(
+                            uri,
+                            null,
+                            null,
+                            null,
+                            null,
+                        )?.use { cursor ->
+                            /*
+                             * Get the column indexes of the data in the Cursor,
+                             * move to the first row in the Cursor, get the data,
+                             * and display it.
+                             */
+                            val nameIndex = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+                            cursor.moveToFirst()
+                            cursor.getString(nameIndex)
+
+                        }
+
+                        uiState.onMessageValueChange(name.toString())
+                        viewModelMessage.loadMediaInScreen(uri.toString())
+                        viewModelMessage.sendMessage()
+                    } else {
+                        Log.d("FilePicker", "No media selected")
+                    }
+                }
+
             if (uiState.showBottomSheetFile) {
                 ModalBottomSheetFile(
                     onSelectPhoto = {
+                        pickMedia.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageAndVideo))
                         viewModelMessage.setShowBottomSheetFile(false)
                     },
                     onSelectFile = {
+                        pickFile.launch(arrayOf("*/*"))
                         viewModelMessage.setShowBottomSheetFile(false)
                     }, onBack = {
                         viewModelMessage.setShowBottomSheetFile(false)
@@ -76,7 +132,7 @@ fun NavGraphBuilder.messageListScreen(
 
 internal fun NavHostController.navigateToMessageScreen(
     chatId: Long,
-    navOptions: NavOptions? = null
+    navOptions: NavOptions? = null,
 ) {
     navigate("$messageChatRoute/$chatId", navOptions)
 }
