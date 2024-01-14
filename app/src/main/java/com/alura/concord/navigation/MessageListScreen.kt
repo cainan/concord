@@ -1,5 +1,9 @@
 package com.alura.concord.navigation
 
+import android.Manifest
+import android.content.Intent
+import android.os.Build
+import android.provider.MediaStore
 import android.provider.OpenableColumns
 import android.util.Log
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -14,6 +18,7 @@ import androidx.navigation.NavGraphBuilder
 import androidx.navigation.NavHostController
 import androidx.navigation.NavOptions
 import androidx.navigation.compose.composable
+import com.alura.concord.extensions.showMessage
 import com.alura.concord.ui.chat.MessageListViewModel
 import com.alura.concord.ui.chat.MessageScreen
 import com.alura.concord.ui.components.ModalBottomSheetFile
@@ -52,7 +57,44 @@ fun NavGraphBuilder.messageListScreen(
                 }
             )
 
+            val requestPermissionLauncher = rememberLauncherForActivityResult(
+                ActivityResultContracts.RequestPermission()
+            ) { isGranted: Boolean ->
+                if (isGranted) {
+                    context.showMessage("Permissão confirmada")
+                } else {
+                    context.showMessage("Permissão não concedida")
+                }
+            }
+
             if (uiState.showBottomSheetSticker) {
+
+                val permission = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                    Manifest.permission.READ_MEDIA_IMAGES
+                } else {
+                    Manifest.permission.READ_EXTERNAL_STORAGE
+                }
+                requestPermissionLauncher.launch(permission)
+
+                val projection = null
+                val selection = null
+                val selectionArgs = null
+                val sortOrder = null
+
+                context.contentResolver.query(
+                    MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
+                    projection,
+                    selection,
+                    selectionArgs,
+                    sortOrder
+                )?.use { cursor ->
+                    while (cursor.moveToNext()) {
+                        // Use an ID column from the projection to get
+                        // a URI representing the media item itself.
+                    }
+                }
+
+
                 val stickerList = mutableStateListOf<String>()
 
                 context.getExternalFilesDir("stickers")?.listFiles()?.forEach { file ->
@@ -74,6 +116,11 @@ fun NavGraphBuilder.messageListScreen(
                 rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
 
                     if (uri != null) {
+
+                        val contentResolver = context.contentResolver
+                        val takeFlags: Int = Intent.FLAG_GRANT_READ_URI_PERMISSION
+                        contentResolver.takePersistableUriPermission(uri, takeFlags)
+
                         viewModelMessage.loadMediaInScreen(uri.toString())
                         Log.d("PhotoPicker", "Selected URI: $uri")
                     } else {
@@ -85,6 +132,10 @@ fun NavGraphBuilder.messageListScreen(
                 rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
 
                     if (uri != null) {
+
+                        val contentResolver = context.contentResolver
+                        val takeFlags: Int = Intent.FLAG_GRANT_READ_URI_PERMISSION
+                        contentResolver.takePersistableUriPermission(uri, takeFlags)
 
                         val name = context.contentResolver.query(
                             uri,
