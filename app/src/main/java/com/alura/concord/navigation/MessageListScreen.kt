@@ -1,10 +1,5 @@
 package com.alura.concord.navigation
 
-import android.Manifest
-import android.content.Intent
-import android.os.Build
-import android.provider.MediaStore
-import android.provider.OpenableColumns
 import android.util.Log
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
@@ -19,6 +14,11 @@ import androidx.navigation.NavHostController
 import androidx.navigation.NavOptions
 import androidx.navigation.compose.composable
 import com.alura.concord.extensions.showMessage
+import com.alura.concord.media.getAllImages
+import com.alura.concord.media.getNameByUri
+import com.alura.concord.media.imagePermission
+import com.alura.concord.media.persistUriPermission
+import com.alura.concord.media.verifyPermission
 import com.alura.concord.ui.chat.MessageListViewModel
 import com.alura.concord.ui.chat.MessageScreen
 import com.alura.concord.ui.components.ModalBottomSheetFile
@@ -38,6 +38,17 @@ fun NavGraphBuilder.messageListScreen(
             val uiState by viewModelMessage.uiState.collectAsState()
             val context = LocalContext.current
 
+            val requestPermissionLauncher = rememberLauncherForActivityResult(
+                ActivityResultContracts.RequestPermission()
+            ) { isGranted: Boolean ->
+                if (isGranted) {
+                    viewModelMessage.setShowBottomSheetSticker(true)
+                } else {
+                    context.showMessage("Permissão não concedida")
+                }
+            }
+
+
             MessageScreen(
                 state = uiState,
                 onSendMessage = {
@@ -47,7 +58,12 @@ fun NavGraphBuilder.messageListScreen(
                     viewModelMessage.setShowBottomSheetFile(true)
                 },
                 onShowSelectorStickers = {
-                    viewModelMessage.setShowBottomSheetSticker(true)
+
+                    if (context.verifyPermission(imagePermission())) {
+                        requestPermissionLauncher.launch(imagePermission())
+                    } else {
+                        viewModelMessage.setShowBottomSheetSticker(true)
+                    }
                 },
                 onDeselectMedia = {
                     viewModelMessage.deselectMedia()
@@ -57,49 +73,13 @@ fun NavGraphBuilder.messageListScreen(
                 }
             )
 
-            val requestPermissionLauncher = rememberLauncherForActivityResult(
-                ActivityResultContracts.RequestPermission()
-            ) { isGranted: Boolean ->
-                if (isGranted) {
-                    context.showMessage("Permissão confirmada")
-                } else {
-                    context.showMessage("Permissão não concedida")
-                }
-            }
-
             if (uiState.showBottomSheetSticker) {
-
-                val permission = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                    Manifest.permission.READ_MEDIA_IMAGES
-                } else {
-                    Manifest.permission.READ_EXTERNAL_STORAGE
-                }
-                requestPermissionLauncher.launch(permission)
-
-                val projection = null
-                val selection = null
-                val selectionArgs = null
-                val sortOrder = null
-
-                context.contentResolver.query(
-                    MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
-                    projection,
-                    selection,
-                    selectionArgs,
-                    sortOrder
-                )?.use { cursor ->
-                    while (cursor.moveToNext()) {
-                        // Use an ID column from the projection to get
-                        // a URI representing the media item itself.
-                    }
-                }
-
 
                 val stickerList = mutableStateListOf<String>()
 
-                context.getExternalFilesDir("stickers")?.listFiles()?.forEach { file ->
-                    stickerList.add(file.path)
-                }
+                context.getAllImages(onLoadImages = {
+                    stickerList.addAll(it)
+                })
 
                 ModalBottomSheetSticker(
                     stickerList = stickerList,
@@ -117,10 +97,7 @@ fun NavGraphBuilder.messageListScreen(
 
                     if (uri != null) {
 
-                        val contentResolver = context.contentResolver
-                        val takeFlags: Int = Intent.FLAG_GRANT_READ_URI_PERMISSION
-                        contentResolver.takePersistableUriPermission(uri, takeFlags)
-
+                        context.persistUriPermission(uri)
                         viewModelMessage.loadMediaInScreen(uri.toString())
                         Log.d("PhotoPicker", "Selected URI: $uri")
                     } else {
@@ -133,27 +110,8 @@ fun NavGraphBuilder.messageListScreen(
 
                     if (uri != null) {
 
-                        val contentResolver = context.contentResolver
-                        val takeFlags: Int = Intent.FLAG_GRANT_READ_URI_PERMISSION
-                        contentResolver.takePersistableUriPermission(uri, takeFlags)
-
-                        val name = context.contentResolver.query(
-                            uri,
-                            null,
-                            null,
-                            null,
-                            null,
-                        )?.use { cursor ->
-                            /*
-                             * Get the column indexes of the data in the Cursor,
-                             * move to the first row in the Cursor, get the data,
-                             * and display it.
-                             */
-                            val nameIndex = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
-                            cursor.moveToFirst()
-                            cursor.getString(nameIndex)
-
-                        }
+                        context.persistUriPermission(uri)
+                        val name = context.getNameByUri(uri)
 
                         uiState.onMessageValueChange(name.toString())
                         viewModelMessage.loadMediaInScreen(uri.toString())
